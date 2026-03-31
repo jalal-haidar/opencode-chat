@@ -1,0 +1,96 @@
+{
+  "name": "opencode-chat",
+  "displayName": "OpenCode Chat",
+  "description": "AI coding agent powered by OpenCode — Copilot-like chat experience",
+  "version": "0.1.0",
+  "publisher": "jalal-haidar",
+  "icon": "media/icon.svg",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jalal-haidar/OpenGUI.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencode-chat",
+          "title": "OpenCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencode-chat": [
+        {
+          "type": "webview",
+          "id": "opencode-chat.chatView",
+          "name": ""
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "opencode-chat.newSession",
+        "title": "New Chat",
+        "category": "OpenCode",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencode-chat.abort",
+        "title": "Stop Generation",
+        "category": "OpenCode",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "opencode-chat.addSelection",
+        "title": "Add Selection to Chat",
+        "category": "OpenCode"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "opencode-chat.addSelection",
+          "when": "editorHasSelection",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "opencode-chat.newSession",
+          "when": "view == opencode-chat.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "OpenCode Chat",
+      "properties": {
+        "opencode-chat.serverPort": {
+          "type": "number",
+          "default": 4096,
+          "description": "Port for the OpenCode local server"
+        },
+        "opencode-chat.opencodePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the opencode binary (leave empty to auto-detect)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "install-ext": "bun run build.ts --install"
+  }
+}
