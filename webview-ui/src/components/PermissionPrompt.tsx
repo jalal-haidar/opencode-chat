@@ -23,7 +23,7 @@ export function PermissionPrompt({ permission: perm }: PermissionPromptProps) {
     <div className="permission">
       <div className="permission__title">Permission Required</div>
       <div className="permission__text">
-        {perm.tool ?? perm.description ?? "Action requires approval"}
+        {String(perm.tool ?? perm.description ?? "Action requires approval")}
       </div>
       <div className="permission__actions">
         <button onClick={() => respond("once")}>Allow Once</button>

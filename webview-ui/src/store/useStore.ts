@@ -62,7 +62,6 @@ export const useStore = create<StoreState>((set, get) => ({
   statusMessages: [],
 
   handleHostMessage(msg: HostMessage) {
-    console.log("[OpenCode] host→webview:", msg.type, msg);
     switch (msg.type) {
       case "server-status": {
         set({ serverStatus: msg.status });
@@ -114,17 +113,33 @@ export const useStore = create<StoreState>((set, get) => ({
         break;
       }
 
-      case "message-update":
+      case "message-update": {
+        const replaceId = (msg as any).replaceId as string | undefined;
         set((s) => {
-          const newOrder = s.messageOrder.includes(msg.message.id)
-            ? s.messageOrder
-            : [...s.messageOrder, msg.message.id];
+          let order = s.messageOrder;
+          let msgs = s.messages;
+          let pts = s.parts;
+
+          // If replacing an optimistic temp message, remove it first
+          if (replaceId && replaceId !== msg.message.id) {
+            order = order.filter((id) => id !== replaceId);
+            const { [replaceId]: _rm, ...restMsgs } = msgs;
+            msgs = restMsgs;
+            const { [replaceId]: _rp, ...restParts } = pts;
+            pts = restParts;
+          }
+
+          const newOrder = order.includes(msg.message.id)
+            ? order
+            : [...order, msg.message.id];
           return {
-            messages: { ...s.messages, [msg.message.id]: msg.message },
+            messages: { ...msgs, [msg.message.id]: msg.message },
+            parts: pts,
             messageOrder: newOrder,
           };
         });
         break;
+      }
 
       case "part-update":
         set((s) => {

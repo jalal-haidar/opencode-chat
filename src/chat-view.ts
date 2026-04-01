@@ -34,6 +34,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private client: any = null;
   private sseAbort?: AbortController;
+  /** Tracks the temp optimistic message ID so SSE can replace it */
+  private pendingUserMsgId?: string;
   private state: ChatState = {
     sessions: [],
     activeSessionId: null,
@@ -69,7 +71,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // Forward server status
     this.server.onStatus((s) => {
-      console.log("[OpenCode Chat] server status:", s.state, s.error ?? "");
       this.post({ type: "server-status", status: s });
       if (s.state === "running" && !this.client) this.initClient();
     });
@@ -115,15 +116,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /* ----- Client init ----- */
 
   private async initClient() {
-    console.log(
-      "[OpenCode Chat] initClient called, server url:",
-      this.server.url,
-    );
     try {
       const { createOpencodeClient } =
         await import("@opencode-ai/sdk/v2/client");
       this.client = createOpencodeClient({ baseUrl: this.server.url });
-      console.log("[OpenCode Chat] SDK client created successfully");
       await this.loadSessions();
       await this.loadModels();
       this.startSSE();
@@ -245,13 +241,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "message.updated": {
         const msg: MessageInfo = props.info ?? props.message ?? props;
         if (!msg?.id) break;
-        // Only handle events for active session
         if (msg.sessionID !== this.state.activeSessionId) break;
+
+        // If this is the real user message replacing our optimistic one, remove the temp
+        if (msg.role === "user" && this.pendingUserMsgId) {
+          const tempId = this.pendingUserMsgId;
+          this.pendingUserMsgId = undefined;
+          this.state.messages.delete(tempId);
+          this.state.parts.delete(tempId);
+          this.state.messageOrder = this.state.messageOrder.filter(
+            (id) => id !== tempId,
+          );
+          // Tell webview to replace with fresh message list
+          this.post({
+            type: "message-update",
+            message: msg,
+            replaceId: tempId,
+          } as any);
+        } else {
+          this.post({ type: "message-update", message: msg });
+        }
+
         this.state.messages.set(msg.id, msg);
         if (!this.state.messageOrder.includes(msg.id)) {
           this.state.messageOrder.push(msg.id);
         }
-        this.post({ type: "message-update", message: msg });
         break;
       }
 
@@ -312,12 +326,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case "send": {
-        console.log(
-          "[OpenCode Chat] send received, client:",
-          !!this.client,
-          "server:",
-          this.server.status.state,
-        );
         if (!this.client) {
           this.postError({
             message:
@@ -326,23 +334,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return;
         }
         let sid = this.state.activeSessionId;
-        console.log("[OpenCode Chat] activeSessionId:", sid);
         if (!sid) {
           try {
             const res = await this.client.session.create({
               directory: this.workspaceDir,
             });
-            console.log(
-              "[OpenCode Chat] session.create response:",
-              JSON.stringify(res),
-            );
             const data = res.data;
             sid = data?.id;
             if (!sid) {
-              console.error(
-                "[OpenCode Chat] session.create returned no id:",
-                res,
-              );
               this.postError({
                 message: "Failed to create session — no session ID returned.",
               });
@@ -351,7 +350,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             this.state.activeSessionId = sid;
             this.post({ type: "active-session", session: data });
           } catch (e: any) {
-            console.error("[OpenCode Chat] session.create failed:", e);
             this.postError(e);
             return;
           }
@@ -367,7 +365,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           role: "user",
           time: { created: Date.now() / 1000 },
         };
-        console.log("[OpenCode Chat] posting optimistic message:", userMsg.id);
+        this.pendingUserMsgId = userMsg.id;
+        this.state.messages.set(userMsg.id, userMsg);
+        this.state.messageOrder.push(userMsg.id);
         this.post({ type: "message-update", message: userMsg });
         this.post({
           type: "part-update",
@@ -387,7 +387,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               parts.push({ type: "file", mime: "image/png", url: img });
             }
           }
-          console.log("[OpenCode Chat] calling promptAsync, sessionID:", sid);
           await this.client.session.promptAsync({
             sessionID: sid!,
             directory: this.workspaceDir,
@@ -395,9 +394,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.agent ? { agent: msg.agent } : {}),
           });
-          console.log("[OpenCode Chat] promptAsync completed");
         } catch (e: any) {
-          console.error("[OpenCode Chat] promptAsync failed:", e);
+          this.pendingUserMsgId = undefined;
           this.state.isBusy = false;
           this.post({ type: "busy", busy: false });
           this.postError(e);
@@ -459,6 +457,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       ),
     );
     const nonce = getNonce();
+    const cacheBust = Date.now();
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -471,12 +470,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                  font-src ${webview.cspSource};
                  img-src ${webview.cspSource} data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="${styleUri}" rel="stylesheet">
+  <link href="${styleUri}?v=${cacheBust}" rel="stylesheet">
   <title>OpenCode Chat</title>
 </head>
 <body>
   <div id="root"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}?v=${cacheBust}"></script>
 </body>
 </html>`;
   }

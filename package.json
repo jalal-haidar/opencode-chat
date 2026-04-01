@@ -7,7 +7,7 @@
   "icon": "media/icon.svg",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jalal-haidar/OpenGUI.git"
+    "url": "https://github.com/jalal-haidar/opencode-chat.git"
   },
   "engines": {
     "vscode": "^1.85.0"

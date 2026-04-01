@@ -13,7 +13,6 @@ export default defineConfig({
     outDir: "../dist/webview",
     emptyOutDir: true,
     target: "es2020",
-    minify: false,
     // VS Code loads the webview locally — bundle size is not a network concern.
     chunkSizeWarningLimit: 1000,
     // Disable module preload polyfill — it injects an inline script that

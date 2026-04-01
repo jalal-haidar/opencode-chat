@@ -9,17 +9,16 @@ import { ModelAgentBar } from "./components/ModelAgentBar";
 import { ContextBar } from "./components/ContextBar";
 
 export function App() {
-  const handleHostMessage = useStore((s) => s.handleHostMessage);
-
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      handleHostMessage(event.data as HostMessage);
+      // Always read the latest handler from the store at call time
+      // to avoid stale closures and re-render loops
+      useStore.getState().handleHostMessage(event.data as HostMessage);
     };
     window.addEventListener("message", handler);
-    // Signal to the extension host that the webview is ready
     postMessage({ type: "ready" });
     return () => window.removeEventListener("message", handler);
-  }, [handleHostMessage]);
+  }, []); // empty deps — mount once, never re-run
 
   return (
     <div id="app">

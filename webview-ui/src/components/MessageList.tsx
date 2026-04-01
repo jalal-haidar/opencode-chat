@@ -1,6 +1,41 @@
+import { Component, type ReactNode, type ErrorInfo } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { useStore } from "../store/useStore";
 import { Message } from "./Message";
 import { PermissionPrompt } from "./PermissionPrompt";
+
+/** Lightweight per-message error boundary so one bad message doesn't crash the whole UI */
+class MessageErrorBoundary extends Component<
+  { msgId: string; children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(
+      "[MessageErrorBoundary]",
+      this.props.msgId,
+      error,
+      info.componentStack,
+    );
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="message-error">
+          <strong>{"Render error"}</strong>
+          <pre>{String(this.state.error?.message ?? this.state.error)}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function MessageList() {
   const messageOrder = useStore((s) => s.messageOrder);
@@ -14,37 +49,22 @@ export function MessageList() {
     pendingPermissions.length === 0 &&
     statusMessages.length === 0;
 
-  console.log(
-    "[MessageList] render — isEmpty:",
-    isEmpty,
-    "messageOrder:",
-    messageOrder,
-    "messages:",
-    messages,
-  );
-
   return (
-    <main
-      id="messages"
-      role="log"
-      aria-live="polite"
-      data-empty={isEmpty}
-      style={{ overflowY: "auto" }}
-    >
-      {messageOrder.map((id) => {
-        const msg = messages[id];
-        if (!msg) return null;
-        try {
-          return <Message key={id} message={msg} />;
-        } catch (e) {
-          console.error("[MessageList] Message render error:", e, "msg:", msg);
+    <main id="messages" role="log" aria-live="polite" data-empty={isEmpty}>
+      <Virtuoso
+        data={messageOrder}
+        followOutput="smooth"
+        itemContent={(_index, id) => {
+          const msg = messages[id];
+          if (!msg) return null;
           return (
-            <div key={id} style={{ color: "red" }}>
-              Error rendering message {String(id)}
-            </div>
+            <MessageErrorBoundary key={id} msgId={id}>
+              <Message message={msg} />
+            </MessageErrorBoundary>
           );
-        }
-      })}
+        }}
+        style={{ flex: 1 }}
+      />
       {pendingPermissions.map((perm) => (
         <PermissionPrompt key={perm.id} permission={perm} />
       ))}

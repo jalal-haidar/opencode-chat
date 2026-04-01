@@ -18,6 +18,8 @@ export class OpenCodeServer {
   private proc: ChildProcess | null = null;
   private _status: ServerStatus;
   private listeners: StatusCallback[] = [];
+  private lastWorkspaceDir?: string;
+  private lastBinaryPath?: string;
 
   constructor(private port: number) {
     this._status = { state: "idle", port };
@@ -75,6 +77,8 @@ export class OpenCodeServer {
   /** Start the opencode server process. */
   async start(workspaceDir: string, binaryPath: string): Promise<void> {
     if (this._status.state === "running") return;
+    this.lastWorkspaceDir = workspaceDir;
+    this.lastBinaryPath = binaryPath;
     this.setStatus({ state: "starting" });
 
     this.proc = spawn(binaryPath, ["serve", "--port", String(this.port)], {
@@ -89,11 +93,21 @@ export class OpenCodeServer {
     });
 
     this.proc.on("exit", (code) => {
+      this.proc = null;
       if (this._status.state !== "stopped") {
         this.setStatus({
           state: "error",
           error: `opencode exited with code ${code}`,
         });
+        // Auto-restart after a brief delay
+        setTimeout(() => {
+          if (this._status.state === "error" && this.proc === null) {
+            this.start(
+              this.lastWorkspaceDir ?? "",
+              this.lastBinaryPath ?? "",
+            ).catch(() => {});
+          }
+        }, 3000);
       }
     });
 
