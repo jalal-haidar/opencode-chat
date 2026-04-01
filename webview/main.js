@@ -1,6 +1,8 @@
 // @ts-nocheck
 // OpenCode Chat — Webview main script (vanilla JS, no framework)
 // Copilot-like chat interface
+// DOMPurify is loaded as a separate script before this file.
+/* global DOMPurify */
 
 (() => {
   "use strict";
@@ -176,7 +178,7 @@
           contentEl.appendChild(el);
           partElements.set(key, el);
         }
-        el.innerHTML = renderMarkdown(part.text || "");
+        el.innerHTML = DOMPurify.sanitize(renderMarkdown(part.text || ""));
         break;
       }
 
@@ -197,7 +199,9 @@
                 ? "✕"
                 : "◦";
         el.className = `part part--tool tool--${stateClass}`;
-        el.innerHTML = `<span class="tool-icon">${icon}</span> <span class="tool-name">${escapeHtml(part.tool || "tool")}</span>`;
+        el.innerHTML = DOMPurify.sanitize(
+          `<span class="tool-icon">${icon}</span> <span class="tool-name">${escapeHtml(part.tool || "tool")}</span>`,
+        );
         break;
       }
 
@@ -208,7 +212,9 @@
           contentEl.appendChild(el);
           partElements.set(key, el);
         }
-        el.innerHTML = `<details><summary>Thinking…</summary><div class="reasoning-text">${escapeHtml(part.text || "")}</div></details>`;
+        el.innerHTML = DOMPurify.sanitize(
+          `<details><summary>Thinking…</summary><div class="reasoning-text">${escapeHtml(part.text || "")}</div></details>`,
+        );
         break;
       }
 
@@ -403,7 +409,7 @@
         if (perm && perm.state === "pending") {
           const el = document.createElement("div");
           el.className = "permission";
-          el.innerHTML = `
+          el.innerHTML = DOMPurify.sanitize(`
             <div class="permission__title">Permission Required</div>
             <div class="permission__text">${escapeHtml(perm.tool || perm.description || "Action requires approval")}</div>
             <div class="permission__actions">
@@ -411,7 +417,7 @@
               <button data-action="always">Always Allow</button>
               <button data-action="reject" class="btn--danger">Deny</button>
             </div>
-          `;
+          `);
           el.querySelectorAll("button[data-action]").forEach((btn) => {
             btn.addEventListener("click", () => {
               vscode.postMessage({

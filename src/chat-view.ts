@@ -1,41 +1,19 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
 import type { OpenCodeServer } from "./server";
-
-/* ------------------------------------------------------------------ */
-/*  Types mirrored from the OpenCode SDK (kept minimal)               */
-/* ------------------------------------------------------------------ */
-
-interface SessionInfo {
-  id: string;
-  title: string;
-  time: { created: number; updated: number };
-}
-
-interface MessageInfo {
-  id: string;
-  sessionID: string;
-  role: "user" | "assistant";
-  time: { created: number; completed?: number };
-  cost?: number;
-  tokens?: { input: number; output: number; reasoning: number };
-  error?: { type: string; message?: string };
-}
-
-interface PartInfo {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: string;
-  text?: string;
-  tool?: string;
-  state?: string;
-  metadata?: Record<string, unknown>;
-}
+import type {
+  HostMessage,
+  WebviewMessage,
+  SessionInfo,
+  MessageInfo,
+  PartInfo,
+} from "./shared/protocol";
 
 /* ------------------------------------------------------------------ */
 /*  Internal extension-host state                                     */
 /* ------------------------------------------------------------------ */
+
+import type { ProviderInfo, AgentInfo } from "./shared/protocol";
 
 interface ChatState {
   sessions: SessionInfo[];
@@ -43,8 +21,8 @@ interface ChatState {
   messages: Map<string, MessageInfo>;
   parts: Map<string, PartInfo[]>;
   messageOrder: string[];
-  providers: unknown[];
-  agents: unknown[];
+  providers: ProviderInfo[];
+  agents: Record<string, AgentInfo>;
   isBusy: boolean;
 }
 
@@ -63,7 +41,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     parts: new Map(),
     messageOrder: [],
     providers: [],
-    agents: [],
+    agents: {},
     isBusy: false,
   };
 
@@ -85,7 +63,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       ],
     };
     view.webview.html = this.buildHtml(view.webview);
-    view.webview.onDidReceiveMessage((m) => this.onWebviewMessage(m));
+    view.webview.onDidReceiveMessage((m) =>
+      this.onWebviewMessage(m as WebviewMessage),
+    );
 
     // Forward server status
     this.server.onStatus((s) => {
@@ -171,7 +151,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.client.app.agents({ directory: this.workspaceDir }),
       ]);
       this.state.providers = provRes.data ?? [];
-      this.state.agents = agentRes.data ?? [];
+      this.state.agents = agentRes.data ?? {};
       this.post({ type: "providers", providers: this.state.providers });
       this.post({ type: "agents", agents: this.state.agents });
     } catch {}
@@ -304,7 +284,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /* ----- Webview message handler ----- */
 
-  private async onWebviewMessage(msg: any) {
+  private async onWebviewMessage(msg: WebviewMessage) {
     switch (msg.type) {
       case "ready":
         this.post({
@@ -407,7 +387,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /* ----- Helpers ----- */
 
-  private post(msg: unknown) {
+  private post(msg: HostMessage) {
     this.view?.webview.postMessage(msg);
   }
 
@@ -429,6 +409,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.file(
         path.join(this.ctx.extensionPath, "dist", "webview", "main.js"),
+      ),
+    );
+    const purifyUri = webview.asWebviewUri(
+      vscode.Uri.file(
+        path.join(this.ctx.extensionPath, "dist", "webview", "purify.min.js"),
       ),
     );
     const nonce = getNonce();
@@ -491,6 +476,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       </div>
     </footer>
   </div>
+  <script nonce="${nonce}" src="${purifyUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
