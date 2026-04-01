@@ -1,22 +1,6 @@
-import { useCallback } from "react";
-import { Virtuoso } from "react-virtuoso";
 import { useStore } from "../store/useStore";
 import { Message } from "./Message";
 import { PermissionPrompt } from "./PermissionPrompt";
-import type { MessageInfo, PermissionInfo } from "@shared/protocol";
-
-type VirtualItem =
-  | { kind: "message"; id: string; msg: MessageInfo }
-  | { kind: "permission"; perm: PermissionInfo }
-  | { kind: "thinking" }
-  | { kind: "status"; id: string; text: string; isError: boolean };
-
-function itemKey(_: number, item: VirtualItem): string {
-  if (item.kind === "message") return `msg-${item.id}`;
-  if (item.kind === "permission") return `perm-${item.perm.id}`;
-  if (item.kind === "thinking") return "thinking";
-  return `status-${item.id}`;
-}
 
 export function MessageList() {
   const messageOrder = useStore((s) => s.messageOrder);
@@ -30,52 +14,55 @@ export function MessageList() {
     pendingPermissions.length === 0 &&
     statusMessages.length === 0;
 
-  const allItems: VirtualItem[] = [
-    ...messageOrder
-      .filter((id) => messages[id])
-      .map((id) => ({ kind: "message" as const, id, msg: messages[id]! })),
-    ...pendingPermissions.map((perm) => ({
-      kind: "permission" as const,
-      perm,
-    })),
-    ...(isBusy ? [{ kind: "thinking" as const }] : []),
-    ...statusMessages.map((sm) => ({ ...sm, kind: "status" as const })),
-  ];
-
-  const renderItem = useCallback((_: number, item: VirtualItem) => {
-    switch (item.kind) {
-      case "message":
-        return <Message message={item.msg} />;
-      case "permission":
-        return <PermissionPrompt permission={item.perm} />;
-      case "thinking":
-        return (
-          <div className="thinking">
-            <span className="dot" />
-            <span className="dot" />
-            <span className="dot" />
-          </div>
-        );
-      case "status":
-        return (
-          <div className={`status${item.isError ? " status--error" : ""}`}>
-            {item.text}
-          </div>
-        );
-    }
-  }, []);
+  console.log(
+    "[MessageList] render — isEmpty:",
+    isEmpty,
+    "messageOrder:",
+    messageOrder,
+    "messages:",
+    messages,
+  );
 
   return (
-    <main id="messages" role="log" aria-live="polite" data-empty={isEmpty}>
-      {!isEmpty && (
-        <Virtuoso
-          style={{ height: "100%" }}
-          data={allItems}
-          followOutput="smooth"
-          computeItemKey={itemKey}
-          itemContent={renderItem}
-        />
+    <main
+      id="messages"
+      role="log"
+      aria-live="polite"
+      data-empty={isEmpty}
+      style={{ overflowY: "auto" }}
+    >
+      {messageOrder.map((id) => {
+        const msg = messages[id];
+        if (!msg) return null;
+        try {
+          return <Message key={id} message={msg} />;
+        } catch (e) {
+          console.error("[MessageList] Message render error:", e, "msg:", msg);
+          return (
+            <div key={id} style={{ color: "red" }}>
+              Error rendering message {String(id)}
+            </div>
+          );
+        }
+      })}
+      {pendingPermissions.map((perm) => (
+        <PermissionPrompt key={perm.id} permission={perm} />
+      ))}
+      {isBusy && (
+        <div className="thinking">
+          <span className="dot" />
+          <span className="dot" />
+          <span className="dot" />
+        </div>
       )}
+      {statusMessages.map((sm) => (
+        <div
+          key={sm.id}
+          className={`status${sm.isError ? " status--error" : ""}`}
+        >
+          {String(sm.text)}
+        </div>
+      ))}
     </main>
   );
 }

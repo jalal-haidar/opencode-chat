@@ -80,6 +80,8 @@ body {
 
 #messages {
   flex: 1;
+  min-height: 0; /* crucial for flex children — allows shrinking below content size */
+  position: relative;
   /* Virtuoso manages internal scrolling — the outer element must not scroll */
   overflow: hidden;
 }

@@ -62,6 +62,7 @@ export const useStore = create<StoreState>((set, get) => ({
   statusMessages: [],
 
   handleHostMessage(msg: HostMessage) {
+    console.log("[OpenCode] host→webview:", msg.type, msg);
     switch (msg.type) {
       case "server-status": {
         set({ serverStatus: msg.status });

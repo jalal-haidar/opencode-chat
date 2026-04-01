@@ -69,6 +69,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // Forward server status
     this.server.onStatus((s) => {
+      console.log("[OpenCode Chat] server status:", s.state, s.error ?? "");
       this.post({ type: "server-status", status: s });
       if (s.state === "running" && !this.client) this.initClient();
     });
@@ -114,10 +115,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /* ----- Client init ----- */
 
   private async initClient() {
+    console.log(
+      "[OpenCode Chat] initClient called, server url:",
+      this.server.url,
+    );
     try {
       const { createOpencodeClient } =
         await import("@opencode-ai/sdk/v2/client");
       this.client = createOpencodeClient({ baseUrl: this.server.url });
+      console.log("[OpenCode Chat] SDK client created successfully");
       await this.loadSessions();
       await this.loadModels();
       this.startSSE();
@@ -306,6 +312,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case "send": {
+        console.log(
+          "[OpenCode Chat] send received, client:",
+          !!this.client,
+          "server:",
+          this.server.status.state,
+        );
         if (!this.client) {
           this.postError({
             message:
@@ -314,15 +326,32 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return;
         }
         let sid = this.state.activeSessionId;
+        console.log("[OpenCode Chat] activeSessionId:", sid);
         if (!sid) {
           try {
-            const { data } = await this.client.session.create({
+            const res = await this.client.session.create({
               directory: this.workspaceDir,
             });
-            sid = data.id;
+            console.log(
+              "[OpenCode Chat] session.create response:",
+              JSON.stringify(res),
+            );
+            const data = res.data;
+            sid = data?.id;
+            if (!sid) {
+              console.error(
+                "[OpenCode Chat] session.create returned no id:",
+                res,
+              );
+              this.postError({
+                message: "Failed to create session — no session ID returned.",
+              });
+              return;
+            }
             this.state.activeSessionId = sid;
             this.post({ type: "active-session", session: data });
           } catch (e: any) {
+            console.error("[OpenCode Chat] session.create failed:", e);
             this.postError(e);
             return;
           }
@@ -338,6 +367,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           role: "user",
           time: { created: Date.now() / 1000 },
         };
+        console.log("[OpenCode Chat] posting optimistic message:", userMsg.id);
         this.post({ type: "message-update", message: userMsg });
         this.post({
           type: "part-update",
@@ -357,6 +387,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               parts.push({ type: "file", mime: "image/png", url: img });
             }
           }
+          console.log("[OpenCode Chat] calling promptAsync, sessionID:", sid);
           await this.client.session.promptAsync({
             sessionID: sid!,
             directory: this.workspaceDir,
@@ -364,7 +395,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.agent ? { agent: msg.agent } : {}),
           });
+          console.log("[OpenCode Chat] promptAsync completed");
         } catch (e: any) {
+          console.error("[OpenCode Chat] promptAsync failed:", e);
           this.state.isBusy = false;
           this.post({ type: "busy", busy: false });
           this.postError(e);

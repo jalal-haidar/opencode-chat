@@ -13,24 +13,35 @@ interface MessagePartProps {
 export function MessagePart({ part }: MessagePartProps) {
   switch (part.type) {
     case "text":
-      return <MarkdownRenderer text={part.text ?? ""} />;
+      return <MarkdownRenderer text={String(part.text ?? "")} />;
 
     case "tool": {
-      const stateClass = part.state ?? "pending";
+      // SDK sends state as an object {status, input, ...} — extract status string
+      const rawState = part.state;
+      const stateStr: string =
+        typeof rawState === "object" && rawState !== null
+          ? ((rawState as any).status ?? "pending")
+          : typeof rawState === "string"
+            ? rawState
+            : "pending";
       const icon =
-        stateClass === "completed"
+        stateStr === "completed"
           ? "✓"
-          : stateClass === "running"
+          : stateStr === "running"
             ? "⟳"
-            : stateClass === "error"
+            : stateStr === "error"
               ? "✕"
               : "◦";
+      const toolName =
+        typeof part.tool === "string"
+          ? part.tool
+          : ((part.tool as any)?.name ?? "tool");
       return (
         <div
-          className={`part part--tool tool--${stateClass}`}
+          className={`part part--tool tool--${stateStr}`}
           dangerouslySetInnerHTML={{
             __html: DOMPurify.sanitize(
-              `<span class="tool-icon">${icon}</span> <span class="tool-name">${escapeHtml(part.tool ?? "tool")}</span>`,
+              `<span class="tool-icon">${icon}</span> <span class="tool-name">${escapeHtml(toolName)}</span>`,
             ),
           }}
         />
@@ -42,7 +53,7 @@ export function MessagePart({ part }: MessagePartProps) {
         <div className="part part--reasoning">
           <details>
             <summary>Thinking…</summary>
-            <div className="reasoning-text">{part.text ?? ""}</div>
+            <div className="reasoning-text">{String(part.text ?? "")}</div>
           </details>
         </div>
       );
