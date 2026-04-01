@@ -2,10 +2,10 @@
  * Build script for OpenCode Chat VS Code extension.
  *
  * Produces:
- *   dist/extension.js     — extension host (CJS, bundled by Bun)
- *   dist/webview/main.js  — webview script (copied as-is, no bundling)
- *   dist/webview/styles.css — webview styles (copied as-is)
- *   dist/media/icon.svg   — activity bar icon
+ *   dist/extension.js       — extension host (CJS, bundled by Bun)
+ *   dist/webview/main.js    — webview React app (Vite build)
+ *   dist/webview/styles.css — webview styles (Vite build)
+ *   dist/media/icon.svg     — activity bar icon
  */
 
 import { build, type BuildConfig } from "bun";
@@ -15,7 +15,8 @@ import { join } from "node:path";
 const root = import.meta.dir;
 const outDir = join(root, "dist");
 
-// Clean
+// Clean — Vite's emptyOutDir handles dist/webview itself,
+// but we still need dist/media upfront.
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(join(outDir, "webview"), { recursive: true });
 mkdirSync(join(outDir, "media"), { recursive: true });
@@ -43,9 +44,19 @@ console.log(
   `  → dist/extension.js (${extResult.outputs[0]?.size ?? "?"} bytes)`,
 );
 
-// 2. Copy webview assets (no bundling — vanilla JS keeps it tiny)
-cpSync(join(root, "webview"), join(outDir, "webview"), { recursive: true });
-console.log("  → dist/webview/ (copied)");
+// 2. Build webview UI (React + Vite)
+console.log("Building webview UI…");
+const webviewResult = Bun.spawnSync(["bun", "run", "build"], {
+  cwd: join(root, "webview-ui"),
+  stdout: "pipe",
+  stderr: "pipe",
+});
+if (webviewResult.exitCode !== 0) {
+  console.error("Webview build failed:");
+  console.error(webviewResult.stderr.toString());
+  process.exit(1);
+}
+console.log("  → dist/webview/ (Vite)");
 
 // 3. Copy media
 cpSync(join(root, "media"), join(outDir, "media"), { recursive: true });

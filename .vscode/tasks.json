@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "bun run build.ts",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "watch:webview",
+      "type": "shell",
+      "command": "bun run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/webview-ui"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "label": "Webview Watch"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 /* ================================================================== */
-/*  OpenCode Chat — VS Code Webview Styles                            */
+/*  OpenCode Chat — VS Code Webview Styles (React port)              */
 /*  Uses VS Code CSS variables for seamless theme integration         */
 /* ================================================================== */
 
@@ -17,6 +17,10 @@ body {
   font-size: 13px;
   color: var(--vscode-foreground);
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+#root {
+  height: 100%;
 }
 
 #app {
@@ -76,12 +80,17 @@ body {
 
 #messages {
   flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-  scroll-behavior: smooth;
+  /* Virtuoso manages internal scrolling — the outer element must not scroll */
+  overflow: hidden;
 }
 
-#messages:empty::after {
+/* When non-empty, Virtuoso's scrollable container needs full height */
+#messages > div {
+  height: 100%;
+}
+
+/* React renders children so :empty never triggers — use data-empty instead */
+#messages[data-empty="true"]::after {
   content: "Start a conversation…";
   display: block;
   text-align: center;
@@ -219,6 +228,10 @@ body {
   overflow: hidden;
 }
 
+/* highlight.js sets its own background on .hljs — let .code-block own it instead */
+.code-block .hljs {
+  background: transparent;
+}
 .code-header {
   display: flex;
   justify-content: space-between;

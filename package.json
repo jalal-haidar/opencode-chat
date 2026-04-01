@@ -92,5 +92,8 @@
   "scripts": {
     "build": "bun run build.ts",
     "install-ext": "bun run build.ts --install"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.3.13"
   }
 }

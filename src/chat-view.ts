@@ -115,17 +115,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async initClient() {
     try {
-      const sdk = await import("@opencode-ai/sdk/v2/client");
-      const { createOpencodeClient } = sdk;
-      this.client = createOpencodeClient({
-        baseUrl: this.server.url,
-        directory: this.workspaceDir,
-      });
+      const { createOpencodeClient } =
+        await import("@opencode-ai/sdk/v2/client");
+      this.client = createOpencodeClient({ baseUrl: this.server.url });
       await this.loadSessions();
       await this.loadModels();
       this.startSSE();
     } catch (e: any) {
       console.error("[OpenCode Chat] SDK init failed:", e);
+      this.postError({
+        message: `Failed to connect to OpenCode server: ${e?.message}`,
+      });
     }
   }
 
@@ -136,9 +136,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const { data } = await this.client.session.list({
         directory: this.workspaceDir,
-        limit: 50,
       });
-      this.state.sessions = data ?? [];
+      this.state.sessions = (data as SessionInfo[]) ?? [];
       this.post({ type: "sessions", sessions: this.state.sessions });
     } catch {}
   }
@@ -150,11 +149,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.client.provider.list({ directory: this.workspaceDir }),
         this.client.app.agents({ directory: this.workspaceDir }),
       ]);
-      this.state.providers = provRes.data ?? [];
-      this.state.agents = agentRes.data ?? {};
+      // provider.list returns { all: Provider[] }
+      const provData = provRes.data as any;
+      this.state.providers = (provData?.all ??
+        provData ??
+        []) as ProviderInfo[];
+      // app.agents returns Agent[] — convert to Record<id, AgentInfo>
+      const agentArr: any[] = (agentRes.data as any) ?? [];
+      this.state.agents = Array.isArray(agentArr)
+        ? Object.fromEntries(agentArr.map((a: any) => [a.name ?? a.id, a]))
+        : agentArr;
       this.post({ type: "providers", providers: this.state.providers });
       this.post({ type: "agents", agents: this.state.agents });
-    } catch {}
+    } catch (e: any) {
+      console.error("[OpenCode Chat] loadModels failed:", e);
+    }
   }
 
   private async loadMessages(sessionId: string) {
@@ -165,20 +174,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         directory: this.workspaceDir,
         limit: 200,
       });
-      // data is { messages: Message[], parts: Record<string, Part[]> }
+      // API returns Array<{ info: Message, parts: Part[] }>
       this.state.messages.clear();
       this.state.parts.clear();
       this.state.messageOrder = [];
 
-      const msgs: MessageInfo[] = data?.messages ?? data ?? [];
-      const parts: Record<string, PartInfo[]> = data?.parts ?? {};
+      const rawItems: any[] = (data as any) ?? [];
+      const msgs: MessageInfo[] = [];
+      const parts: Record<string, PartInfo[]> = {};
 
-      for (const m of msgs) {
+      for (const item of rawItems) {
+        const m: MessageInfo = item.info ?? item;
+        const ps: PartInfo[] = item.parts ?? [];
+        msgs.push(m);
         this.state.messages.set(m.id, m);
         this.state.messageOrder.push(m.id);
-      }
-      for (const [mid, ps] of Object.entries(parts)) {
-        this.state.parts.set(mid, ps);
+        this.state.parts.set(m.id, ps);
+        parts[m.id] = ps;
       }
 
       this.post({
@@ -202,17 +214,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     (async () => {
       try {
-        const result = await this.client.event.subscribe({
-          directory: this.workspaceDir,
-          signal,
-          sseMaxRetryAttempts: 1,
-          onSseError: () => {},
-        });
-        const stream = result.stream ?? result;
-        for await (const event of stream) {
+        const result = await this.client.event.subscribe(
+          { directory: this.workspaceDir },
+          { signal } as any,
+        );
+        for await (const event of result.stream) {
           if (signal.aborted) break;
-          const payload = event.properties ? event : event.payload;
-          if (payload) this.handleSSEEvent(payload);
+          this.handleSSEEvent(event);
         }
       } catch (err: any) {
         if (err.name !== "AbortError") {
@@ -229,7 +237,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     switch (type) {
       case "message.updated": {
-        const msg: MessageInfo = props.message ?? props;
+        const msg: MessageInfo = props.info ?? props.message ?? props;
         if (!msg?.id) break;
         // Only handle events for active session
         if (msg.sessionID !== this.state.activeSessionId) break;
@@ -271,7 +279,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       }
 
-      case "permission.updated": {
+      case "permission.asked": {
         const perm = props.permission ?? props;
         if (perm) this.post({ type: "permission", permission: perm });
         break;
@@ -298,7 +306,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case "send": {
-        if (!this.client) return;
+        if (!this.client) {
+          this.postError({
+            message:
+              "OpenCode server is not ready yet. Please wait a moment and try again.",
+          });
+          return;
+        }
         let sid = this.state.activeSessionId;
         if (!sid) {
           try {
@@ -411,11 +425,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         path.join(this.ctx.extensionPath, "dist", "webview", "main.js"),
       ),
     );
-    const purifyUri = webview.asWebviewUri(
-      vscode.Uri.file(
-        path.join(this.ctx.extensionPath, "dist", "webview", "purify.min.js"),
-      ),
-    );
     const nonce = getNonce();
 
     return `<!DOCTYPE html>
@@ -433,51 +442,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <title>OpenCode Chat</title>
 </head>
 <body>
-  <div id="app">
-    <header id="header">
-      <select id="session-select" aria-label="Session">
-        <option value="">New Chat</option>
-      </select>
-      <button id="new-chat-btn" title="New Chat" aria-label="New Chat">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 1v6H2v2h6v6h2V9h6V7H10V1z"/>
-        </svg>
-      </button>
-    </header>
-
-    <main id="messages" role="log" aria-live="polite"></main>
-
-    <footer id="input-area">
-      <div id="context-bar" style="display:none"></div>
-      <div id="input-row">
-        <textarea id="prompt-input"
-                  name="prompt"
-                  placeholder="Ask anything…"
-                  rows="1"
-                  aria-label="Chat prompt"></textarea>
-        <button id="send-btn" title="Send" aria-label="Send">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M1 1.91L7.37 8 1 14.09 1.91 15 9 8 1.91 1z"/>
-          </svg>
-        </button>
-        <button id="abort-btn" title="Stop" aria-label="Stop generation" style="display:none">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="3" y="3" width="10" height="10" rx="1"/>
-          </svg>
-        </button>
-      </div>
-      <div id="selectors">
-        <select id="model-select" aria-label="Model">
-          <option value="">Default model</option>
-        </select>
-        <select id="agent-select" aria-label="Agent">
-          <option value="">Default agent</option>
-        </select>
-      </div>
-    </footer>
-  </div>
-  <script nonce="${nonce}" src="${purifyUri}"></script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <div id="root"></div>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
   }
